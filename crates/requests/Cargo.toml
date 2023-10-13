@@ -1,0 +1,18 @@
+[package]
+name = "aori_requests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aori_types = { path = "../types" }
+ethers = { workspace = true }
+alloy-sol-types = { workspace = true }
+alloy-sol-macro = { workspace = true }
+alloy-primitives = { workspace = true }
+serde_json = { workspace = true }
+serde =  { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+eyre = { workspace = true }
+websockets = "0.3.0"
