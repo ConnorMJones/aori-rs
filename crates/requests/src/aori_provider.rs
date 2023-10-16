@@ -19,7 +19,7 @@ use alloy_primitives::FixedBytes;
 
 use aori_types::{
     constants::{MARKET_FEED_URL, REQUEST_URL},
-    seaport::{OrderParameters, SEAPORT_DOMAIN},
+    seaport::{OrderComponents, SEAPORT_DOMAIN},
 };
 
 pub struct AoriProvider {
@@ -83,14 +83,14 @@ impl AoriProvider {
         Ok(())
     }
 
-    pub async fn check_auth(&mut self) -> eyre::Result<()> {
+    pub async fn check_auth(&mut self, jwt: &str) -> eyre::Result<()> {
         self.last_id += 1;
         let auth = json!({
             "id": self.last_id,
             "jsonrpc": "2.0",
             "method": "aori_checkAuth",
             "params": [{
-                "auth": *self.wallet_sig
+                "auth": jwt
             }]
         });
         self.request_conn.send_text(auth.to_string()).await?;
@@ -115,7 +115,7 @@ impl AoriProvider {
         Ok(())
     }
 
-    pub async fn make_order(&mut self, order_params: OrderParameters) -> eyre::Result<()> {
+    pub async fn make_order(&mut self, order_params: OrderComponents) -> eyre::Result<()> {
         self.last_id += 1;
         let sig: FixedBytes<32> = order_params.eip712_signing_hash(&SEAPORT_DOMAIN);
         let signed_sig: Signature = self.wallet.sign_message(sig.as_slice()).await?;
@@ -126,39 +126,13 @@ impl AoriProvider {
             "params": [{
                 "order": {
                     "signature": format!("0x{}", signed_sig),
-                    "parameters": {
-                        "offerer": format!("{}", order_params.offerer),
-                        "zone": format!("{}", order_params.zone),
-                        "zoneHash": format!("{}", order_params.zoneHash),
-                        "startTime": format!("{}", order_params.startTime),
-                        "endTime": format!("{}", order_params.endTime),
-                        "orderType": order_params.orderType as u8,
-                        "offer": [{
-                            "itemType": order_params.offer[0].itemType as u8,
-                            "token": format!("{}", order_params.offer[0].token),
-                            "identifierOrCriteria": order_params.offer[0].identifierOrCriteria.to::<i16>(),
-                            "startAmount": order_params.offer[0].startAmount.to::<u128>(),
-                            "endAmount": order_params.offer[0].endAmount.to::<u128>()
-                        }],
-                        "consideration": [{
-                            "itemType": order_params.consideration[0].itemType as u8,
-                            "token": format!("{}", order_params.consideration[0].token),
-                            "identifierOrCriteria": order_params.consideration[0].identifierOrCriteria.to::<i16>(),
-                            "startAmount": order_params.consideration[0].startAmount.to::<u128>(),
-                            "endAmount": order_params.consideration[0].endAmount.to::<u128>(),
-                            "recipient": format!("{}", order_params.consideration[0].recipient),
-                        }],
-                        "totalOriginalConsiderationItems": order_params.totalOriginalConsiderationItems.to::<i16>(),
-                        "salt": format!("{}", order_params.salt),
-                        "conduitKey": format!("{}", order_params.conduitKey),
-                        "counter": "0"
-                    }
+                    "parameters": order_params.to_json()
                 },
                 "isPublic": true,
                 "chainId": self.chain_id
             }]
         });
-        println!("Order > \n {:#?}", &order);
+
         self.request_conn.send_text(order.to_string()).await?;
         Ok(())
     }
@@ -184,6 +158,8 @@ mod tests {
     use aori_types::seaport::{
         ConsiderationItem, ItemType, OfferItem, OrderComponents, OrderParameters, OrderType,
     };
+    use tokio::time::{sleep, Duration};
+    use websockets::Frame;
 
     #[tokio::test]
     async fn generate_order_sig() {
@@ -239,5 +215,80 @@ mod tests {
         let signed_bytes: Signature = apv.wallet.sign_message(params_sig).await.unwrap();
         println!("Correct signature length");
         println!("0x{}", signed_bytes);
+    }
+
+    #[tokio::test]
+    async fn test_connection() {
+        dotenv::dotenv().ok();
+        let mut apv = AoriProvider::new_from_env()
+            .await
+            .expect("Failed to create Aori Provider");
+        apv.ping().await.unwrap();
+        let response = format!("{:#?}", apv.request_conn.receive().await.unwrap());
+        println!("{response:}");
+    }
+
+    #[tokio::test]
+    async fn test_auth() {
+        dotenv::dotenv().ok();
+        let mut apv = AoriProvider::new_from_env()
+            .await
+            .expect("Failed to create Aori Provider");
+        apv.auth_wallet().await.unwrap();
+        let frame: Frame = apv.request_conn.receive().await.unwrap();
+
+        let payload: String = match frame {
+            Frame::Text { payload, .. } => Some(payload),
+            _ => None,
+        }
+        .unwrap();
+        let resp_value: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        let jwt = resp_value.pointer("/result/auth").unwrap().to_string();
+        apv.check_auth(jwt.as_str()).await.unwrap();
+        sleep(Duration::from_millis(100)).await;
+        let check = format!("{:#?}", apv.request_conn.receive().await.unwrap());
+        println!("jwt > {}", jwt);
+        println!(" check > {check:}");
+    }
+
+    #[tokio::test]
+    async fn test_make_order() {
+        dotenv::dotenv().ok();
+        let mut apv = AoriProvider::new_from_env()
+            .await
+            .expect("Failed to create Aori Provider");
+        let offer_item = OfferItem {
+            itemType: ItemType::ERC20,
+            token: Address::ZERO,
+            identifierOrCriteria: U256::from(0),
+            startAmount: U256::from(0),
+            endAmount: U256::from(0),
+        };
+        let consider_item = ConsiderationItem {
+            itemType: ItemType::ERC20,
+            token: Address::ZERO,
+            identifierOrCriteria: U256::from(0),
+            startAmount: U256::from(0),
+            endAmount: U256::from(0),
+            recipient: Address::ZERO,
+        };
+        let order_params = OrderComponents {
+            offerer: Address::ZERO,
+            zone: DEFAULT_ORDER_ADDRESS,
+            offer: vec![offer_item.clone()],
+            consideration: vec![consider_item.clone()],
+            orderType: OrderType::PARTIAL_RESTRICTED,
+            startTime: U256::from(1697240202),
+            endTime: U256::from(1697240202),
+            zoneHash: DEFAULT_ZONE_HASH.into(),
+            salt: U256::from(0),
+            conduitKey: DEFAULT_CONDUIT_KEY.into(),
+            counter: U256::from(0),
+        };
+
+        apv.make_order(order_params).await.unwrap();
+
+        let response = format!("{:#?}", apv.request_conn.receive().await.unwrap());
+        println!("{response:}");
     }
 }

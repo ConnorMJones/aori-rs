@@ -4,6 +4,8 @@ use alloy_sol_types::{eip712_domain, Eip712Domain};
 
 use once_cell::sync::Lazy;
 
+use serde_json::{json, Value};
+
 use crate::constants::{CURRENT_SEAPORT_ADDRESS, CURRENT_SEAPORT_VERSION};
 
 pub static SEAPORT_DOMAIN: Lazy<Eip712Domain> = Lazy::new(|| {
@@ -16,6 +18,7 @@ pub static SEAPORT_DOMAIN: Lazy<Eip712Domain> = Lazy::new(|| {
 });
 
 sol! {
+    #[derive(Debug)]
     enum OrderType {
         FULL_OPEN,
         PARTIAL_OPEN,
@@ -24,6 +27,7 @@ sol! {
         CONTRACT
     }
 
+    #[derive(Debug)]
     enum ItemType {
         NATIVE,
         ERC20,
@@ -33,6 +37,7 @@ sol! {
         ERC1155_WITH_CRITERIA
     }
 
+    #[derive(Debug)]
     struct OfferItem {
         ItemType itemType;
         address token;
@@ -41,6 +46,7 @@ sol! {
         uint256 endAmount;
     }
 
+    #[derive(Debug)]
     struct OrderComponents {
         address offerer;
         address zone;
@@ -55,6 +61,7 @@ sol! {
         uint256 counter;
     }
 
+    #[derive(Debug)]
     struct ConsiderationItem {
         ItemType itemType;
         address token;
@@ -64,6 +71,7 @@ sol! {
         address payable recipient;
     }
 
+    #[derive(Debug)]
     struct ReceivedItem {
         ItemType itemType;
         address token;
@@ -72,6 +80,7 @@ sol! {
         address payable recipient;
     }
 
+    #[derive(Debug)]
     struct BasicOrderParameters {
         address considerationToken;
         uint256 considerationIdentifier;
@@ -93,6 +102,7 @@ sol! {
         bytes signature;
     }
 
+    #[derive(Debug)]
     struct OrderParameters {
         address offerer;
         address zone;
@@ -107,11 +117,13 @@ sol! {
         uint256 totalOriginalConsiderationItems;
     }
 
+    #[derive(Debug)]
     struct Order {
         OrderParameters parameters;
         bytes signature;
     }
 
+    #[derive(Debug)]
     struct AdvancedOrder {
         OrderParameters parameters;
         uint120 numerator;
@@ -120,6 +132,7 @@ sol! {
         bytes extraData;
     }
 
+    #[derive(Debug)]
     struct OrderStatus {
         bool isValidated;
         bool isCancelled;
@@ -127,6 +140,7 @@ sol! {
         uint120 denominator;
     }
 
+    #[derive(Debug)]
     struct ZoneParameters {
         bytes32 orderHash;
         address fulfiller;
@@ -140,6 +154,7 @@ sol! {
         bytes32 zoneHash;
     }
 
+    #[derive(Debug)]
     struct SpentItem {
         ItemType itemType;
         address token;
@@ -147,11 +162,13 @@ sol! {
         uint256 amount;
     }
 
+    #[derive(Debug)]
     struct AdditionalRecipient {
         uint256 amount;
         address payable recipient;
     }
 
+    #[derive(Debug)]
     enum BasicOrderType {
         ETH_TO_ERC721_FULL_OPEN,
         ETH_TO_ERC721_PARTIAL_OPEN,
@@ -180,13 +197,130 @@ sol! {
     }
 }
 
+impl OfferItem {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "itemType": self.itemType as u8,
+            "token": format!("{}", self.token),
+            "identifierOrCriteria": self.identifierOrCriteria.to::<i16>(),
+            "startAmount": format!("{}", self.startAmount),
+            "endAmount": format!("{}", self.endAmount)
+        })
+    }
+}
+
+impl ConsiderationItem {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "itemType": self.itemType as u8,
+            "token": format!("{}", self.token),
+            "identifierOrCriteria": self.identifierOrCriteria.to::<i16>(),
+            "startAmount": format!("{}", self.startAmount),
+            "endAmount": format!("{}", self.endAmount),
+            "recipient": format!("{}", self.recipient)
+        })
+    }
+}
+
+impl OrderParameters {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "offerer": format!("0x{}", self.offerer),
+            "zone": format!("{}", self.zone),
+            "offer": self.offer.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
+            "consideration": self.consideration.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
+            "orderType": self.orderType as u8,
+            "startTime": format!("{}", self.startTime),
+            "endTime": format!("{}", self.endTime),
+            "zoneHash": format!("{}", self.zoneHash),
+            "salt": format!("{}", self.salt),
+            "conduitKey": format!("{}", self.conduitKey),
+            "totalOriginalConsiderationItems": self.totalOriginalConsiderationItems.to::<i16>()
+        })
+    }
+}
+
+impl OrderComponents {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "offerer": format!("0x{}", self.offerer),
+            "zone": format!("{}", self.zone),
+            "offer": self.offer.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
+            "consideration": self.consideration.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
+            "orderType": self.orderType as u8,
+            "startTime": format!("{}", self.startTime),
+            "endTime": format!("{}", self.endTime),
+            "zoneHash": format!("{}", self.zoneHash),
+            "salt": format!("{}", self.salt),
+            "conduitKey": format!("{}", self.conduitKey),
+            "counter": format!("{}", self.counter),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::{DEFAULT_CONDUIT_KEY, DEFAULT_ORDER_ADDRESS, DEFAULT_ZONE_HASH};
+    use alloy_primitives::{Address, U256};
 
     #[test]
     fn load_lazy() {
         let dom = &*SEAPORT_DOMAIN;
         println!("{:?}", dom);
+    }
+
+    #[test]
+    fn parse_to_json() {
+        let offer_item = OfferItem {
+            itemType: ItemType::ERC20,
+            token: Address::ZERO,
+            identifierOrCriteria: U256::from(0),
+            startAmount: U256::from(0),
+            endAmount: U256::from(0),
+        };
+        let consider_item = ConsiderationItem {
+            itemType: ItemType::ERC20,
+            token: Address::ZERO,
+            identifierOrCriteria: U256::from(0),
+            startAmount: U256::from(0),
+            endAmount: U256::from(0),
+            recipient: Address::ZERO,
+        };
+        let order_comps = OrderComponents {
+            offerer: Address::ZERO,
+            zone: DEFAULT_ORDER_ADDRESS,
+            offer: vec![offer_item.clone(), offer_item.clone()],
+            consideration: vec![consider_item.clone(), consider_item.clone()],
+            orderType: OrderType::PARTIAL_RESTRICTED,
+            startTime: U256::from(1697240202),
+            endTime: U256::from(1697240202),
+            zoneHash: DEFAULT_ZONE_HASH.into(),
+            salt: U256::from(0),
+            conduitKey: DEFAULT_CONDUIT_KEY.into(),
+            counter: U256::from(0),
+        };
+        let order_params = OrderParameters {
+            offerer: Address::ZERO,
+            zone: DEFAULT_ORDER_ADDRESS,
+            offer: vec![offer_item.clone(), offer_item.clone()],
+            consideration: vec![consider_item.clone(), consider_item.clone()],
+            orderType: OrderType::PARTIAL_RESTRICTED,
+            startTime: U256::from(1697240202),
+            endTime: U256::from(1697240202),
+            zoneHash: DEFAULT_ZONE_HASH.into(),
+            salt: U256::from(0),
+            conduitKey: DEFAULT_CONDUIT_KEY.into(),
+            totalOriginalConsiderationItems: U256::from(2),
+        };
+        let comps_json = order_comps.to_json();
+        let params_json = order_params.to_json();
+        println!("{:#?} {:#?}", order_comps, comps_json);
+        assert!(comps_json.pointer("/offer").unwrap().is_array());
+        assert!(params_json.pointer("/offer").unwrap().is_array());
+        assert_eq!(comps_json["offer"].as_array().unwrap().len(), 2);
+        assert_eq!(params_json["offer"].as_array().unwrap().len(), 2);
+        assert_eq!(comps_json["consideration"].as_array().unwrap().len(), 2);
+        assert_eq!(params_json["consideration"].as_array().unwrap().len(), 2);
     }
 }
