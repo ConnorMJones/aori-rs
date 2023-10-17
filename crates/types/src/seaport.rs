@@ -39,7 +39,7 @@ sol! {
 
     #[derive(Debug)]
     struct OfferItem {
-        ItemType itemType;
+        uint8 itemType;
         address token;
         uint256 identifierOrCriteria;
         uint256 startAmount;
@@ -52,7 +52,7 @@ sol! {
         address zone;
         OfferItem[] offer;
         ConsiderationItem[] consideration;
-        OrderType orderType;
+        uint8 orderType;
         uint256 startTime;
         uint256 endTime;
         bytes32 zoneHash;
@@ -63,7 +63,7 @@ sol! {
 
     #[derive(Debug)]
     struct ConsiderationItem {
-        ItemType itemType;
+        uint8 itemType;
         address token;
         uint256 identifierOrCriteria;
         uint256 startAmount;
@@ -202,7 +202,7 @@ impl OfferItem {
         json!({
             "itemType": self.itemType as u8,
             "token": format!("{}", self.token),
-            "identifierOrCriteria": self.identifierOrCriteria.to::<i16>(),
+            "identifierOrCriteria": format!("{}", self.identifierOrCriteria),
             "startAmount": format!("{}", self.startAmount),
             "endAmount": format!("{}", self.endAmount)
         })
@@ -214,7 +214,7 @@ impl ConsiderationItem {
         json!({
             "itemType": self.itemType as u8,
             "token": format!("{}", self.token),
-            "identifierOrCriteria": self.identifierOrCriteria.to::<i16>(),
+            "identifierOrCriteria": format!("{}", self.identifierOrCriteria),
             "startAmount": format!("{}", self.startAmount),
             "endAmount": format!("{}", self.endAmount),
             "recipient": format!("{}", self.recipient)
@@ -225,7 +225,7 @@ impl ConsiderationItem {
 impl OrderParameters {
     pub fn to_json(&self) -> Value {
         json!({
-            "offerer": format!("0x{}", self.offerer),
+            "offerer": format!("{}", self.offerer),
             "zone": format!("{}", self.zone),
             "offer": self.offer.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
             "consideration": self.consideration.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
@@ -235,7 +235,7 @@ impl OrderParameters {
             "zoneHash": format!("{}", self.zoneHash),
             "salt": format!("{}", self.salt),
             "conduitKey": format!("{}", self.conduitKey),
-            "totalOriginalConsiderationItems": self.totalOriginalConsiderationItems.to::<i16>()
+            "totalOriginalConsiderationItems": self.totalOriginalConsiderationItems.to::<i16>(),
         })
     }
 }
@@ -243,7 +243,7 @@ impl OrderParameters {
 impl OrderComponents {
     pub fn to_json(&self) -> Value {
         json!({
-            "offerer": format!("0x{}", self.offerer),
+            "offerer": format!("{}", self.offerer),
             "zone": format!("{}", self.zone),
             "offer": self.offer.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
             "consideration": self.consideration.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
@@ -253,10 +253,12 @@ impl OrderComponents {
             "zoneHash": format!("{}", self.zoneHash),
             "salt": format!("{}", self.salt),
             "conduitKey": format!("{}", self.conduitKey),
+            "totalOriginalConsiderationItems": 1,
             "counter": format!("{}", self.counter),
         })
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -273,14 +275,14 @@ mod tests {
     #[test]
     fn parse_to_json() {
         let offer_item = OfferItem {
-            itemType: ItemType::ERC20,
+            itemType: ItemType::ERC20 as u8,
             token: Address::ZERO,
             identifierOrCriteria: U256::from(0),
             startAmount: U256::from(0),
             endAmount: U256::from(0),
         };
         let consider_item = ConsiderationItem {
-            itemType: ItemType::ERC20,
+            itemType: ItemType::ERC20 as u8,
             token: Address::ZERO,
             identifierOrCriteria: U256::from(0),
             startAmount: U256::from(0),
@@ -292,7 +294,7 @@ mod tests {
             zone: DEFAULT_ORDER_ADDRESS,
             offer: vec![offer_item.clone(), offer_item.clone()],
             consideration: vec![consider_item.clone(), consider_item.clone()],
-            orderType: OrderType::PARTIAL_RESTRICTED,
+            orderType: OrderType::PARTIAL_RESTRICTED as u8,
             startTime: U256::from(1697240202),
             endTime: U256::from(1697240202),
             zoneHash: DEFAULT_ZONE_HASH.into(),

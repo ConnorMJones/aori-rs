@@ -10,7 +10,7 @@ use ethers::{
     prelude::{k256::ecdsa::SigningKey, LocalWallet, Wallet, Ws},
     providers::{Middleware, Provider},
     signers::Signer,
-    types::Signature,
+    types::{Signature, H256},
 };
 
 use alloy_sol_types::SolStruct;
@@ -19,7 +19,7 @@ use alloy_primitives::FixedBytes;
 
 use aori_types::{
     constants::{MARKET_FEED_URL, REQUEST_URL},
-    seaport::{OrderComponents, SEAPORT_DOMAIN},
+    seaport::{SEAPORT_DOMAIN, OrderComponents},
 };
 
 pub struct AoriProvider {
@@ -118,7 +118,7 @@ impl AoriProvider {
     pub async fn make_order(&mut self, order_params: OrderComponents) -> eyre::Result<()> {
         self.last_id += 1;
         let sig: FixedBytes<32> = order_params.eip712_signing_hash(&SEAPORT_DOMAIN);
-        let signed_sig: Signature = self.wallet.sign_message(sig.as_slice()).await?;
+        let signed_sig: Signature = self.wallet.sign_hash(H256::from_slice(sig.as_slice()))?;
         let order = json!({
             "id": self.last_id,
             "jsonrpc": "2.0",
@@ -132,7 +132,6 @@ impl AoriProvider {
                 "chainId": self.chain_id
             }]
         });
-
         self.request_conn.send_text(order.to_string()).await?;
         Ok(())
     }
@@ -153,10 +152,10 @@ impl AoriProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::{Address, U256};
+    use alloy_primitives::{Address, address, U256};
     use aori_types::constants::{DEFAULT_CONDUIT_KEY, DEFAULT_ORDER_ADDRESS, DEFAULT_ZONE_HASH};
     use aori_types::seaport::{
-        ConsiderationItem, ItemType, OfferItem, OrderComponents, OrderParameters, OrderType,
+        ConsiderationItem, ItemType, OfferItem, OrderComponents, OrderType,
     };
     use tokio::time::{sleep, Duration};
     use websockets::Frame;
@@ -168,39 +167,26 @@ mod tests {
             .await
             .expect("Failed to create Aori Provider");
         let offer_item = OfferItem {
-            itemType: ItemType::ERC20,
+            itemType: ItemType::ERC20 as u8,
             token: Address::ZERO,
             identifierOrCriteria: U256::from(0),
             startAmount: U256::from(0),
             endAmount: U256::from(0),
         };
         let consider_item = ConsiderationItem {
-            itemType: ItemType::ERC20,
+            itemType: ItemType::ERC20 as u8,
             token: Address::ZERO,
             identifierOrCriteria: U256::from(0),
             startAmount: U256::from(0),
             endAmount: U256::from(0),
             recipient: Address::ZERO,
         };
-        let order_params = OrderParameters {
-            offerer: Address::ZERO,
-            zone: DEFAULT_ORDER_ADDRESS,
-            offer: vec![offer_item.clone()],
-            consideration: vec![consider_item.clone()],
-            orderType: OrderType::PARTIAL_RESTRICTED,
-            startTime: U256::from(1697240202),
-            endTime: U256::from(1697240202),
-            zoneHash: DEFAULT_ZONE_HASH.into(),
-            salt: U256::from(0),
-            conduitKey: DEFAULT_CONDUIT_KEY.into(),
-            totalOriginalConsiderationItems: U256::from(1),
-        };
         let order_components = OrderComponents {
             offerer: Address::ZERO,
             zone: DEFAULT_ORDER_ADDRESS,
             offer: vec![offer_item],
             consideration: vec![consider_item],
-            orderType: OrderType::PARTIAL_RESTRICTED,
+            orderType: OrderType::PARTIAL_RESTRICTED as u8,
             startTime: U256::from(1697240202),
             endTime: U256::from(1697240202),
             zoneHash: DEFAULT_ZONE_HASH.into(),
@@ -208,13 +194,28 @@ mod tests {
             conduitKey: DEFAULT_CONDUIT_KEY.into(),
             counter: U256::from(0),
         };
-        let params_sig = order_params.eip712_signing_hash(&*SEAPORT_DOMAIN);
-        let components_sig = order_components.eip712_signing_hash(&*SEAPORT_DOMAIN);
-        println!("{}", params_sig);
-        println!("{}", components_sig);
+
+        let params_sig = order_components.eip712_signing_hash(&*SEAPORT_DOMAIN);
+
+        /*
+        https://docs.rs/ethers/latest/ethers/signers/struct.Wallet.html#method.sign_typed_data
+            async fn sign_typed_data<T: Eip712 + Send + Sync>(
+                &self,
+                payload: &T,
+            ) -> Result<Signature, Self::Error> {
+                let encoded =
+                    payload.encode_eip712().map_err(|e| Self::Error::Eip712Error(e.to_string()))?;
+
+                self.sign_hash(H256::from(encoded))
+            }
+        https://github.com/ProjectOpenSea/seaport-js/blob/c7552e1f77528f648b1208f04d4eac910171d48c/src/constants.ts#L10
+        for the type you're signing
+        */
+
         let signed_bytes: Signature = apv.wallet.sign_message(params_sig).await.unwrap();
-        println!("Correct signature length");
+        let signed_slice: Signature = apv.wallet.sign_hash(H256::from_slice(params_sig.as_slice())).unwrap();
         println!("0x{}", signed_bytes);
+        println!("0x{}", signed_slice);
     }
 
     #[tokio::test]
@@ -243,6 +244,7 @@ mod tests {
         }
         .unwrap();
         let resp_value: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        println!("{:#?}", resp_value);
         let jwt = resp_value.pointer("/result/auth").unwrap().to_string();
         apv.check_auth(jwt.as_str()).await.unwrap();
         sleep(Duration::from_millis(100)).await;
@@ -254,35 +256,39 @@ mod tests {
     #[tokio::test]
     async fn test_make_order() {
         dotenv::dotenv().ok();
+        let wallet = std::env::var("WALLET_ADDRESS").context("missing WALLET_ADDRESS").unwrap();
+        let start_time = chrono::Utc::now().timestamp_millis();
+        let end_time = chrono::Utc::now().timestamp_millis() + 1000 * 60 * 60 * 24;
         let mut apv = AoriProvider::new_from_env()
             .await
             .expect("Failed to create Aori Provider");
         let offer_item = OfferItem {
-            itemType: ItemType::ERC20,
-            token: Address::ZERO,
+            itemType: ItemType::ERC20 as u8,
+            token: address!("2715Ccea428F8c7694f7e78B2C89cb454c5F7294"),
             identifierOrCriteria: U256::from(0),
-            startAmount: U256::from(0),
-            endAmount: U256::from(0),
+            startAmount: U256::from(1000000000000000_u128),
+            endAmount: U256::from(1000000000000000_u128),
         };
         let consider_item = ConsiderationItem {
-            itemType: ItemType::ERC20,
-            token: Address::ZERO,
+            itemType: ItemType::ERC20 as u8,
+            token: address!("D3664B5e72B46eaba722aB6f43c22dBF40181954"),
             identifierOrCriteria: U256::from(0),
-            startAmount: U256::from(0),
-            endAmount: U256::from(0),
-            recipient: Address::ZERO,
+            startAmount: U256::from(1500000),
+            endAmount: U256::from(1500000),
+            recipient: Address::parse_checksummed(&wallet, None).unwrap(),
         };
         let order_params = OrderComponents {
-            offerer: Address::ZERO,
+            offerer: Address::parse_checksummed(&wallet, None).unwrap(),
             zone: DEFAULT_ORDER_ADDRESS,
             offer: vec![offer_item.clone()],
             consideration: vec![consider_item.clone()],
-            orderType: OrderType::PARTIAL_RESTRICTED,
-            startTime: U256::from(1697240202),
-            endTime: U256::from(1697240202),
+            orderType: OrderType::PARTIAL_RESTRICTED as u8,
+            startTime: U256::from(start_time),
+            endTime: U256::from(end_time),
             zoneHash: DEFAULT_ZONE_HASH.into(),
             salt: U256::from(0),
             conduitKey: DEFAULT_CONDUIT_KEY.into(),
+            // totalOriginalConsiderationItems: U256::from(1),
             counter: U256::from(0),
         };
 
