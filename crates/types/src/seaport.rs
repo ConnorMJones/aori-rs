@@ -200,7 +200,7 @@ sol! {
 impl OfferItem {
     pub fn to_json(&self) -> Value {
         json!({
-            "itemType": self.itemType as u8,
+            "itemType": self.itemType,
             "token": format!("{}", self.token),
             "identifierOrCriteria": format!("{}", self.identifierOrCriteria),
             "startAmount": format!("{}", self.startAmount),
@@ -212,7 +212,7 @@ impl OfferItem {
 impl ConsiderationItem {
     pub fn to_json(&self) -> Value {
         json!({
-            "itemType": self.itemType as u8,
+            "itemType": self.itemType,
             "token": format!("{}", self.token),
             "identifierOrCriteria": format!("{}", self.identifierOrCriteria),
             "startAmount": format!("{}", self.startAmount),
@@ -247,7 +247,7 @@ impl OrderComponents {
             "zone": format!("{}", self.zone),
             "offer": self.offer.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
             "consideration": self.consideration.iter().map(|item| item.to_json()).collect::<Vec<Value>>(),
-            "orderType": self.orderType as u8,
+            "orderType": self.orderType,
             "startTime": format!("{}", self.startTime),
             "endTime": format!("{}", self.endTime),
             "zoneHash": format!("{}", self.zoneHash),
@@ -258,7 +258,6 @@ impl OrderComponents {
         })
     }
 }
-
 
 #[cfg(test)]
 mod tests {

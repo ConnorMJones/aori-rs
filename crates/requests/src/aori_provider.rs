@@ -19,7 +19,7 @@ use alloy_primitives::FixedBytes;
 
 use aori_types::{
     constants::{MARKET_FEED_URL, REQUEST_URL},
-    seaport::{SEAPORT_DOMAIN, OrderComponents},
+    seaport::{OrderComponents, SEAPORT_DOMAIN},
 };
 
 pub struct AoriProvider {
@@ -152,11 +152,9 @@ impl AoriProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::{Address, address, U256};
+    use alloy_primitives::{address, Address, U256};
     use aori_types::constants::{DEFAULT_CONDUIT_KEY, DEFAULT_ORDER_ADDRESS, DEFAULT_ZONE_HASH};
-    use aori_types::seaport::{
-        ConsiderationItem, ItemType, OfferItem, OrderComponents, OrderType,
-    };
+    use aori_types::seaport::{ConsiderationItem, ItemType, OfferItem, OrderComponents, OrderType};
     use tokio::time::{sleep, Duration};
     use websockets::Frame;
 
@@ -213,7 +211,10 @@ mod tests {
         */
 
         let signed_bytes: Signature = apv.wallet.sign_message(params_sig).await.unwrap();
-        let signed_slice: Signature = apv.wallet.sign_hash(H256::from_slice(params_sig.as_slice())).unwrap();
+        let signed_slice: Signature = apv
+            .wallet
+            .sign_hash(H256::from_slice(params_sig.as_slice()))
+            .unwrap();
         println!("0x{}", signed_bytes);
         println!("0x{}", signed_slice);
     }
@@ -256,7 +257,9 @@ mod tests {
     #[tokio::test]
     async fn test_make_order() {
         dotenv::dotenv().ok();
-        let wallet = std::env::var("WALLET_ADDRESS").context("missing WALLET_ADDRESS").unwrap();
+        let wallet = std::env::var("WALLET_ADDRESS")
+            .context("missing WALLET_ADDRESS")
+            .unwrap();
         let start_time = chrono::Utc::now().timestamp_millis();
         let end_time = chrono::Utc::now().timestamp_millis() + 1000 * 60 * 60 * 24;
         let mut apv = AoriProvider::new_from_env()
